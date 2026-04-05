@@ -2,15 +2,7 @@ import { useState, useEffect, FormEvent } from 'react';
 import { Search, MapPin, ChevronLeft, ChevronRight, Loader2, Sun } from 'lucide-react';
 import { resolveLocation, LocationData } from './lib/location';
 import { generateYearlyData, DaylightData, checkObservesDST } from './lib/daylight';
-import {
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer
-} from 'recharts';
+import { LineChart, Line, BarChart, Bar, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceArea } from 'recharts';
 
 export default function App() {
   const [query, setQuery] = useState('New York, NY');
@@ -222,17 +214,13 @@ export default function App() {
                   )}
                   <div className="absolute inset-0">
                     <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart
+                      <BarChart
                         data={data}
                         margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+                        barCategoryGap={0}
+                        barGap={0}
                       >
-                        <defs>
-                          <linearGradient id="colorDaylight" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#f97316" stopOpacity={0.3}/>
-                            <stop offset="95%" stopColor="#f97316" stopOpacity={0.05}/>
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                        <ReferenceArea {...({ y1: 0, y2: 24, fill: '#334155' } as any)} />
                         <XAxis 
                           dataKey="displayDate" 
                           minTickGap={30}
@@ -248,17 +236,28 @@ export default function App() {
                           tickLine={false}
                           axisLine={false}
                           reversed={true}
+                          allowDataOverflow={true}
                         />
-                        <Tooltip content={<CustomTooltip />} />
-                        <Area 
-                          type="linear" 
-                          dataKey="times" 
-                          stroke="#f97316" 
-                          fill="url(#colorDaylight)" 
-                          strokeWidth={2}
+                        <Bar 
+                          dataKey="times1" 
+                          fill="#fef08a" 
                           name="Daylight"
+                          isAnimationActive={false}
                         />
-                      </AreaChart>
+                        <Bar 
+                          dataKey="times2" 
+                          fill="#fef08a" 
+                          name="Daylight (Night)"
+                          isAnimationActive={false}
+                        />
+                        <CartesianGrid 
+                          strokeDasharray="3 3" 
+                          vertical={false} 
+                          stroke="#ffffff" 
+                          style={{ mixBlendMode: 'difference' }} 
+                        />
+                        <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255, 255, 255, 0.2)' }} />
+                      </BarChart>
                     </ResponsiveContainer>
                   </div>
                 </div>

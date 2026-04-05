@@ -6,7 +6,8 @@ export interface DaylightData {
   displayDate: string; // MMM DD
   sunriseTime: number | null; // Decimal hours (e.g., 6.5 for 6:30 AM), null for polar night
   sunsetTime: number | null; // Decimal hours, null for polar night
-  times: [number, number] | null; // [sunriseTime, sunsetTime] for Recharts Area, null for polar night
+  times1: [number, number] | null; // Primary daylight block
+  times2: [number, number] | null; // Secondary daylight block (for days where daylight crosses midnight)
   daylightDuration: number; // Decimal hours
   sunriseStr: string;
   sunsetStr: string;
@@ -35,7 +36,6 @@ export function generateYearlyData(
 ): DaylightData[] {
   const data: DaylightData[] = [];
   
-  // Determine number of days in the year
   const isLeapYear = (year % 4 === 0 && year % 100 !== 0) || (year % 400 === 0);
   const daysInYear = isLeapYear ? 366 : 365;
 
@@ -51,96 +51,118 @@ export function generateYearlyData(
   };
   
   const standardOffset = Math.min(parseOffset(offsetJanStr), parseOffset(offsetJulStr));
+  const HORIZON_RAD = -0.833 * Math.PI / 180;
 
   for (let i = 0; i < daysInYear; i++) {
-    // Construct local date at noon
-    const localDate = new Date(year, 0, i + 1, 12, 0, 0); // Month is 0-indexed, day is 1-indexed
+    const localDate = new Date(year, 0, i + 1);
     const month = String(localDate.getMonth() + 1).padStart(2, '0');
     const day = String(localDate.getDate()).padStart(2, '0');
     
-    // Create a string representing noon in the target timezone
-    const localNoonStr = `${year}-${month}-${day}T12:00:00`;
+    const blocks: [number, number][] = [];
+    let isUp = false;
+    let blockStart = 0;
     
-    // Get the corresponding UTC Date object
-    const utcDate = fromZonedTime(localNoonStr, timezone);
+    // Sample every 15 minutes
+    for (let min = 0; min <= 24 * 60; min += 15) {
+      let utcDate: Date;
+      
+      if (applyDST) {
+        let localTimeStr;
+        if (min === 24 * 60) {
+          const nextDay = new Date(year, 0, i + 2);
+          const nm = String(nextDay.getMonth() + 1).padStart(2, '0');
+          const nd = String(nextDay.getDate()).padStart(2, '0');
+          localTimeStr = `${year}-${nm}-${nd}T00:00:00`;
+        } else {
+          localTimeStr = `${year}-${month}-${day}T${String(Math.floor(min/60)).padStart(2, '0')}:${String(min%60).padStart(2, '0')}:00`;
+        }
+        utcDate = fromZonedTime(localTimeStr, timezone);
+      } else {
+        const utcMs = Date.UTC(year, localDate.getMonth(), localDate.getDate(), Math.floor(min/60), min%60, 0) - (standardOffset * 60 * 60 * 1000);
+        utcDate = new Date(utcMs);
+      }
+      
+      const pos = SunCalc.getPosition(utcDate, lat, lng);
+      const currentlyUp = pos.altitude > HORIZON_RAD;
+      
+      if (min === 0) {
+        isUp = currentlyUp;
+        if (isUp) blockStart = 0;
+      } else {
+        if (currentlyUp !== isUp) {
+          // Crossed horizon, interpolate
+          const prevMin = min - 15;
+          let prevUtcDate: Date;
+          
+          if (applyDST) {
+            const prevTimeStr = `${year}-${month}-${day}T${String(Math.floor(prevMin/60)).padStart(2, '0')}:${String(prevMin%60).padStart(2, '0')}:00`;
+            prevUtcDate = fromZonedTime(prevTimeStr, timezone);
+          } else {
+            const utcMs = Date.UTC(year, localDate.getMonth(), localDate.getDate(), Math.floor(prevMin/60), prevMin%60, 0) - (standardOffset * 60 * 60 * 1000);
+            prevUtcDate = new Date(utcMs);
+          }
+          
+          const prevPos = SunCalc.getPosition(prevUtcDate, lat, lng);
+          const fraction = (HORIZON_RAD - prevPos.altitude) / (pos.altitude - prevPos.altitude);
+          const crossingMin = prevMin + fraction * 15;
+          const crossingHour = crossingMin / 60;
+          
+          if (currentlyUp) {
+            blockStart = crossingHour;
+          } else {
+            blocks.push([blockStart, crossingHour]);
+          }
+          isUp = currentlyUp;
+        }
+      }
+      
+      if (min === 24 * 60 && isUp) {
+        blocks.push([blockStart, 24]);
+      }
+    }
     
-    // Calculate sunrise and sunset
-    const times = SunCalc.getTimes(utcDate, lat, lng);
-    
-    let sunriseTime: number | null = 0;
-    let sunsetTime: number | null = 0;
-    let timesArray: [number, number] | null = null;
     let daylightDuration = 0;
+    blocks.forEach(b => { daylightDuration += (b[1] - b[0]); });
+    
+    const formatDecimal = (decimal: number) => {
+      let h = Math.floor(decimal);
+      let m = Math.round((decimal - h) * 60);
+      if (m === 60) {
+        h += 1;
+        m = 0;
+      }
+      if (h >= 24) h -= 24;
+      const ampm = h >= 12 ? 'PM' : 'AM';
+      const displayH = h % 12 || 12;
+      return `${displayH}:${m.toString().padStart(2, '0')} ${ampm}`;
+    };
+
     let sunriseStr = '--:--';
     let sunsetStr = '--:--';
-
-    if (isNaN(times.sunrise.getTime()) || isNaN(times.sunset.getTime())) {
-      // Handle polar day/night cases
-      const pos = SunCalc.getPosition(utcDate, lat, lng);
-      if (pos.altitude > 0) {
-        // Polar day (sun is up all day)
-        sunriseTime = 0;
-        sunsetTime = 24;
-        timesArray = [0, 24];
-        daylightDuration = 24;
-        sunriseStr = 'Sun is up all day';
-        sunsetStr = 'Sun is up all day';
-      } else {
-        // Polar night (sun is down all day)
-        sunriseTime = null;
-        sunsetTime = null;
-        timesArray = null;
-        daylightDuration = 0;
-        sunriseStr = 'Sun is down all day';
-        sunsetStr = 'Sun is down all day';
-      }
+    
+    if (blocks.length === 0) {
+      sunriseStr = 'Sun is down all day';
+      sunsetStr = 'Sun is down all day';
+    } else if (blocks.length === 1 && blocks[0][0] === 0 && blocks[0][1] === 24) {
+      sunriseStr = 'Sun is up all day';
+      sunsetStr = 'Sun is up all day';
     } else {
-      if (applyDST) {
-        sunriseTime = timeToDecimalHours(times.sunrise, timezone);
-        sunsetTime = timeToDecimalHours(times.sunset, timezone);
-        sunriseStr = formatInTimeZone(times.sunrise, timezone, 'h:mm a');
-        sunsetStr = formatInTimeZone(times.sunset, timezone, 'h:mm a');
-      } else {
-        const getDecimalFromUTC = (date: Date) => {
-          let val = date.getUTCHours() + date.getUTCMinutes() / 60 + date.getUTCSeconds() / 3600 + standardOffset;
-          while (val < 0) val += 24;
-          while (val >= 24) val -= 24;
-          return val;
-        };
-        sunriseTime = getDecimalFromUTC(times.sunrise);
-        sunsetTime = getDecimalFromUTC(times.sunset);
-        
-        const formatDecimal = (decimal: number) => {
-          let h = Math.floor(decimal);
-          let m = Math.round((decimal - h) * 60);
-          if (m === 60) {
-            h += 1;
-            m = 0;
-          }
-          if (h >= 24) h -= 24;
-          const ampm = h >= 12 ? 'PM' : 'AM';
-          const displayH = h % 12 || 12;
-          return `${displayH}:${m.toString().padStart(2, '0')} ${ampm}`;
-        };
-        sunriseStr = formatDecimal(sunriseTime);
-        sunsetStr = formatDecimal(sunsetTime);
-      }
+      const sunrises = blocks.filter(b => b[0] > 0).map(b => formatDecimal(b[0]));
+      const sunsets = blocks.filter(b => b[1] < 24).map(b => formatDecimal(b[1]));
       
-      // Handle cases where sunset is technically the next local day (e.g., very far north/south)
-      if (sunsetTime < sunriseTime) {
-        sunsetTime += 24;
-      }
-      
-      timesArray = [sunriseTime, sunsetTime];
-      daylightDuration = sunsetTime - sunriseTime;
+      sunriseStr = sunrises.length > 0 ? sunrises.join(', ') : '--:--';
+      sunsetStr = sunsets.length > 0 ? sunsets.join(', ') : '--:--';
     }
+
+    const noonUtc = new Date(Date.UTC(year, localDate.getMonth(), localDate.getDate(), 12, 0, 0));
 
     data.push({
       date: `${year}-${month}-${day}`,
-      displayDate: formatInTimeZone(utcDate, timezone, 'MMM d'),
-      sunriseTime,
-      sunsetTime,
-      times: timesArray,
+      displayDate: formatInTimeZone(noonUtc, 'UTC', 'MMM d'),
+      sunriseTime: blocks.length > 0 && blocks[0][0] > 0 ? blocks[0][0] : null,
+      sunsetTime: blocks.length > 0 && blocks[blocks.length-1][1] < 24 ? blocks[blocks.length-1][1] : null,
+      times1: blocks.length > 0 ? blocks[0] : null,
+      times2: blocks.length > 1 ? blocks[1] : null,
       daylightDuration,
       sunriseStr,
       sunsetStr,
