@@ -1,0 +1,279 @@
+import { useState, useEffect, FormEvent } from 'react';
+import { Search, MapPin, ChevronLeft, ChevronRight, Loader2, Sun } from 'lucide-react';
+import { resolveLocation, LocationData } from './lib/location';
+import { generateYearlyData, DaylightData } from './lib/daylight';
+import {
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  ReferenceLine,
+  LineChart,
+  Line,
+  Legend
+} from 'recharts';
+
+export default function App() {
+  const [query, setQuery] = useState('New York, NY');
+  const [location, setLocation] = useState<LocationData | null>(null);
+  const [year, setYear] = useState(new Date().getFullYear());
+  const [data, setData] = useState<DaylightData[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSearch = async (e?: FormEvent) => {
+    if (e) e.preventDefault();
+    if (!query.trim()) return;
+
+    setLoading(true);
+    setError(null);
+    try {
+      const loc = await resolveLocation(query);
+      setLocation(loc);
+      const yearlyData = generateYearlyData(year, loc.lat, loc.lng, loc.timezone);
+      setData(yearlyData);
+    } catch (err: any) {
+      setError(err.message || 'Failed to resolve location. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    // Initial load
+    handleSearch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (location) {
+      const yearlyData = generateYearlyData(year, location.lat, location.lng, location.timezone);
+      setData(yearlyData);
+    }
+  }, [year, location]);
+
+  const formatHours = (decimalHours: number) => {
+    const hours = Math.floor(decimalHours);
+    const minutes = Math.round((decimalHours - hours) * 60);
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    const displayHours = hours % 12 || 12;
+    return `${displayHours}:${minutes.toString().padStart(2, '0')} ${ampm}`;
+  };
+
+  const formatDuration = (decimalHours: number) => {
+    const hours = Math.floor(decimalHours);
+    const minutes = Math.round((decimalHours - hours) * 60);
+    return `${hours}h ${minutes}m`;
+  };
+
+  const CustomTooltip = ({ active, payload, label }: any) => {
+    if (active && payload && payload.length) {
+      const dataPoint = payload[0].payload as DaylightData;
+      return (
+        <div className="bg-white p-4 border border-slate-200 rounded-lg shadow-lg">
+          <p className="font-semibold text-slate-800 mb-2">{dataPoint.displayDate}, {year}</p>
+          <div className="space-y-1 text-sm">
+            <p className="text-orange-600">
+              <span className="font-medium">Sunrise:</span> {dataPoint.sunriseStr}
+            </p>
+            <p className="text-indigo-600">
+              <span className="font-medium">Sunset:</span> {dataPoint.sunsetStr}
+            </p>
+            <p className="text-slate-600 pt-1 border-t border-slate-100 mt-1">
+              <span className="font-medium">Daylight:</span> {formatDuration(dataPoint.daylightDuration)}
+            </p>
+          </div>
+        </div>
+      );
+    }
+    return null;
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-orange-200">
+      <header className="bg-white border-b border-slate-200 sticky top-0 z-10">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+          <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
+            <div className="flex items-center gap-2 text-orange-500">
+              <Sun className="h-6 w-6" />
+              <h1 className="text-xl font-bold tracking-tight text-slate-900">Daylight Grapher</h1>
+            </div>
+            
+            <form onSubmit={handleSearch} className="w-full sm:max-w-md relative">
+              <input
+                type="text"
+                placeholder="Enter city, zip code, or address..."
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 rounded-full border border-slate-300 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-shadow"
+              />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
+              <button 
+                type="submit" 
+                className="absolute right-2 top-1/2 -translate-y-1/2 bg-orange-500 text-white p-1.5 rounded-full hover:bg-orange-600 transition-colors disabled:opacity-50"
+                disabled={loading || !query.trim()}
+              >
+                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+              </button>
+            </form>
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+        {error && (
+          <div className="bg-red-50 text-red-700 p-4 rounded-xl border border-red-200 flex items-start gap-3">
+            <div className="mt-0.5">⚠️</div>
+            <p>{error}</p>
+          </div>
+        )}
+
+        {!location && !loading && !error && (
+          <div className="text-center py-20">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-orange-100 text-orange-500 mb-4">
+              <MapPin className="h-8 w-8" />
+            </div>
+            <h2 className="text-2xl font-semibold text-slate-800 mb-2">Search for a location</h2>
+            <p className="text-slate-500 max-w-md mx-auto">
+              Enter any city, state, zip code, or address to see its daylight patterns and sunrise/sunset times throughout the year.
+            </p>
+          </div>
+        )}
+
+        {location && (
+          <div className="space-y-6">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+              <div>
+                <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
+                  <MapPin className="h-5 w-5 text-orange-500" />
+                  {location.formattedAddress}
+                </h2>
+                <p className="text-slate-500 mt-1">
+                  {location.lat.toFixed(4)}°, {location.lng.toFixed(4)}° • Timezone: {location.timezone}
+                </p>
+              </div>
+              
+              <div className="flex items-center gap-4 bg-slate-50 p-2 rounded-xl border border-slate-200">
+                <button 
+                  onClick={() => setYear(y => y - 1)}
+                  className="p-2 hover:bg-white rounded-lg transition-colors text-slate-600 hover:text-slate-900 hover:shadow-sm"
+                  aria-label="Previous year"
+                >
+                  <ChevronLeft className="h-5 w-5" />
+                </button>
+                <span className="text-lg font-semibold w-16 text-center tabular-nums">{year}</span>
+                <button 
+                  onClick={() => setYear(y => y + 1)}
+                  className="p-2 hover:bg-white rounded-lg transition-colors text-slate-600 hover:text-slate-900 hover:shadow-sm"
+                  aria-label="Next year"
+                >
+                  <ChevronRight className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Sunrise / Sunset Chart */}
+              <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                <h3 className="text-lg font-semibold text-slate-800 mb-6">Sunrise & Sunset Times</h3>
+                <div className="h-[400px] w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart
+                      data={data}
+                      margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+                    >
+                      <defs>
+                        <linearGradient id="colorDaylight" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#f97316" stopOpacity={0.3}/>
+                          <stop offset="95%" stopColor="#f97316" stopOpacity={0.05}/>
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                      <XAxis 
+                        dataKey="displayDate" 
+                        minTickGap={30}
+                        tick={{ fill: '#64748b', fontSize: 12 }}
+                        tickLine={false}
+                        axisLine={false}
+                      />
+                      <YAxis 
+                        domain={[0, 24]} 
+                        ticks={[0, 4, 8, 12, 16, 20, 24]}
+                        tickFormatter={(val) => formatHours(val)}
+                        tick={{ fill: '#64748b', fontSize: 12 }}
+                        tickLine={false}
+                        axisLine={false}
+                      />
+                      <Tooltip content={<CustomTooltip />} />
+                      <Area 
+                        type="linear" 
+                        dataKey="times" 
+                        stroke="#f97316" 
+                        fill="url(#colorDaylight)" 
+                        strokeWidth={2}
+                        name="Daylight"
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+                <p className="text-sm text-slate-500 mt-4 text-center">
+                  Notice the jumps? Those are Daylight Saving Time transitions.
+                </p>
+              </div>
+
+              {/* Daylight Duration Chart */}
+              <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                <h3 className="text-lg font-semibold text-slate-800 mb-6">Total Daylight Hours</h3>
+                <div className="h-[400px] w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart
+                      data={data}
+                      margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+                    >
+                      <defs>
+                        <linearGradient id="colorDuration" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#eab308" stopOpacity={0.3}/>
+                          <stop offset="95%" stopColor="#eab308" stopOpacity={0.05}/>
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                      <XAxis 
+                        dataKey="displayDate" 
+                        minTickGap={30}
+                        tick={{ fill: '#64748b', fontSize: 12 }}
+                        tickLine={false}
+                        axisLine={false}
+                      />
+                      <YAxis 
+                        domain={['auto', 'auto']}
+                        tickFormatter={(val) => `${Math.round(val)}h`}
+                        tick={{ fill: '#64748b', fontSize: 12 }}
+                        tickLine={false}
+                        axisLine={false}
+                      />
+                      <Tooltip content={<CustomTooltip />} />
+                      <Area 
+                        type="monotone" 
+                        dataKey="daylightDuration" 
+                        stroke="#eab308" 
+                        fill="url(#colorDuration)" 
+                        strokeWidth={2}
+                        name="Duration"
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+                <p className="text-sm text-slate-500 mt-4 text-center">
+                  The smooth curve shows how daylight duration changes independently of the clock.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}

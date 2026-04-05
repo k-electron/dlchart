@@ -1,0 +1,5 @@
+{
+  "name": "Daylight Grapher",
+  "description": "Plots daylight hours and sunrise/sunset times for any location over a year, accounting for regional Daylight Saving Time.",
+  "requestFramePermissions": []
+}
