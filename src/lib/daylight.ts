@@ -4,9 +4,9 @@ import { formatInTimeZone, fromZonedTime } from 'date-fns-tz';
 export interface DaylightData {
   date: string; // YYYY-MM-DD
   displayDate: string; // MMM DD
-  sunriseTime: number; // Decimal hours (e.g., 6.5 for 6:30 AM)
-  sunsetTime: number; // Decimal hours
-  times: [number, number]; // [sunriseTime, sunsetTime] for Recharts Area
+  sunriseTime: number | null; // Decimal hours (e.g., 6.5 for 6:30 AM), null for polar night
+  sunsetTime: number | null; // Decimal hours, null for polar night
+  times: [number, number] | null; // [sunriseTime, sunsetTime] for Recharts Area, null for polar night
   daylightDuration: number; // Decimal hours
   sunriseStr: string;
   sunsetStr: string;
@@ -67,8 +67,9 @@ export function generateYearlyData(
     // Calculate sunrise and sunset
     const times = SunCalc.getTimes(utcDate, lat, lng);
     
-    let sunriseTime = 0;
-    let sunsetTime = 0;
+    let sunriseTime: number | null = 0;
+    let sunsetTime: number | null = 0;
+    let timesArray: [number, number] | null = null;
     let daylightDuration = 0;
     let sunriseStr = '--:--';
     let sunsetStr = '--:--';
@@ -80,13 +81,15 @@ export function generateYearlyData(
         // Polar day (sun is up all day)
         sunriseTime = 0;
         sunsetTime = 24;
+        timesArray = [0, 24];
         daylightDuration = 24;
         sunriseStr = 'Sun is up all day';
         sunsetStr = 'Sun is up all day';
       } else {
         // Polar night (sun is down all day)
-        sunriseTime = 12; // Arbitrary, won't show duration
-        sunsetTime = 12;
+        sunriseTime = null;
+        sunsetTime = null;
+        timesArray = null;
         daylightDuration = 0;
         sunriseStr = 'Sun is down all day';
         sunsetStr = 'Sun is down all day';
@@ -128,6 +131,7 @@ export function generateYearlyData(
         sunsetTime += 24;
       }
       
+      timesArray = [sunriseTime, sunsetTime];
       daylightDuration = sunsetTime - sunriseTime;
     }
 
@@ -136,7 +140,7 @@ export function generateYearlyData(
       displayDate: formatInTimeZone(utcDate, timezone, 'MMM d'),
       sunriseTime,
       sunsetTime,
-      times: [sunriseTime, sunsetTime],
+      times: timesArray,
       daylightDuration,
       sunriseStr,
       sunsetStr,
