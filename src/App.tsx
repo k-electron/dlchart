@@ -100,18 +100,57 @@ export default function App() {
     if (active && payload && payload.length) {
       const dataPoint = payload[0].payload as DaylightData;
       return (
-        <div className="bg-white p-4 border border-slate-200 rounded-lg shadow-lg">
-          <p className="font-semibold text-slate-800 mb-2">{dataPoint.displayDate}, {year}</p>
-          <div className="space-y-1 text-sm">
-            <p className="text-orange-600">
-              <span className="font-medium">Sunrise:</span> {dataPoint.sunriseStr}
-            </p>
-            <p className="text-indigo-600">
-              <span className="font-medium">Sunset:</span> {dataPoint.sunsetStr}
-            </p>
-            <p className="text-slate-600 pt-1 border-t border-slate-100 mt-1">
-              <span className="font-medium">Daylight:</span> {formatDuration(dataPoint.daylightDuration)}
-            </p>
+        <div className="bg-white p-4 border border-slate-200 rounded-lg shadow-lg w-64">
+          <div className="flex items-center justify-between mb-3">
+            <p className="font-semibold text-slate-800">{dataPoint.displayDate}, {year}</p>
+            {dataPoint.isDST && (
+              <span className="px-1.5 py-0.5 bg-orange-100 text-orange-700 text-[10px] font-bold rounded uppercase tracking-wider">
+                DST
+              </span>
+            )}
+          </div>
+          
+          {/* Tiny Bar */}
+          <div className="mb-4">
+            <div className="h-3 w-full bg-slate-700 rounded-sm overflow-hidden relative">
+              {dataPoint.blocks && dataPoint.blocks.map((block, i) => (
+                <div
+                  key={i}
+                  className="absolute top-0 bottom-0 bg-yellow-200"
+                  style={{
+                    left: `${(block[0] / 24) * 100}%`,
+                    width: `${((block[1] - block[0]) / 24) * 100}%`
+                  }}
+                />
+              ))}
+            </div>
+            <div className="flex justify-between text-[10px] text-slate-400 mt-1 font-mono">
+              <span>12 AM</span>
+              <span>12 PM</span>
+              <span>12 AM</span>
+            </div>
+          </div>
+
+          <div className="space-y-2 text-sm">
+            {dataPoint.events && dataPoint.events.length > 0 ? (
+              dataPoint.events.map((event, i) => (
+                <div key={i} className="flex justify-between items-center">
+                  <span className={event.type === 'Sunrise' ? 'text-orange-600 font-medium' : 'text-indigo-600 font-medium'}>
+                    {event.type}
+                  </span>
+                  <span className="text-slate-700">{event.display}</span>
+                </div>
+              ))
+            ) : (
+              <div className="text-slate-600 italic">
+                {dataPoint.daylightDuration === 0 ? 'Sun is down all day' : 'Sun is up all day'}
+              </div>
+            )}
+            
+            <div className="flex justify-between items-center pt-2 border-t border-slate-100 mt-2">
+              <span className="font-medium text-slate-600">Total Daylight</span>
+              <span className="text-slate-800 font-medium">{formatDuration(dataPoint.daylightDuration)}</span>
+            </div>
           </div>
         </div>
       );
@@ -223,10 +262,16 @@ export default function App() {
                         <ReferenceArea {...({ y1: 0, y2: 24, fill: '#334155' } as any)} />
                         <XAxis 
                           dataKey="displayDate" 
+                          xAxisId={0}
                           minTickGap={30}
                           tick={{ fill: '#64748b', fontSize: 12 }}
                           tickLine={false}
                           axisLine={false}
+                        />
+                        <XAxis 
+                          dataKey="displayDate" 
+                          xAxisId={1}
+                          hide={true}
                         />
                         <YAxis 
                           domain={[0, 24]} 
@@ -240,12 +285,14 @@ export default function App() {
                         />
                         <Bar 
                           dataKey="times1" 
+                          xAxisId={0}
                           fill="#fef08a" 
                           name="Daylight"
                           isAnimationActive={false}
                         />
                         <Bar 
                           dataKey="times2" 
+                          xAxisId={1}
                           fill="#fef08a" 
                           name="Daylight (Night)"
                           isAnimationActive={false}

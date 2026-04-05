@@ -1,6 +1,12 @@
 import SunCalc from 'suncalc';
 import { formatInTimeZone, fromZonedTime } from 'date-fns-tz';
 
+export interface DaylightEvent {
+  type: 'Sunrise' | 'Sunset';
+  time: number; // Decimal hours
+  display: string;
+}
+
 export interface DaylightData {
   date: string; // YYYY-MM-DD
   displayDate: string; // MMM DD
@@ -8,6 +14,9 @@ export interface DaylightData {
   sunsetTime: number | null; // Decimal hours, null for polar night
   times1: [number, number] | null; // Primary daylight block
   times2: [number, number] | null; // Secondary daylight block (for days where daylight crosses midnight)
+  blocks: [number, number][]; // All daylight blocks for the day
+  events: DaylightEvent[]; // Chronological list of sunrise/sunset events
+  isDST: boolean; // Whether daylight saving time is active on this day
   daylightDuration: number; // Decimal hours
   sunriseStr: string;
   sunsetStr: string;
@@ -139,6 +148,7 @@ export function generateYearlyData(
 
     let sunriseStr = '--:--';
     let sunsetStr = '--:--';
+    const dayEvents: DaylightEvent[] = [];
     
     if (blocks.length === 0) {
       sunriseStr = 'Sun is down all day';
@@ -152,9 +162,25 @@ export function generateYearlyData(
       
       sunriseStr = sunrises.length > 0 ? sunrises.join(', ') : '--:--';
       sunsetStr = sunsets.length > 0 ? sunsets.join(', ') : '--:--';
+      
+      // Populate chronological events
+      blocks.forEach(b => {
+        if (b[0] > 0) {
+          dayEvents.push({ type: 'Sunrise', time: b[0], display: formatDecimal(b[0]) });
+        }
+        if (b[1] < 24) {
+          dayEvents.push({ type: 'Sunset', time: b[1], display: formatDecimal(b[1]) });
+        }
+      });
+      dayEvents.sort((a, b) => a.time - b.time);
     }
 
     const noonUtc = new Date(Date.UTC(year, localDate.getMonth(), localDate.getDate(), 12, 0, 0));
+    
+    // Determine if DST is active on this day
+    const currentOffsetStr = formatInTimeZone(noonUtc, timezone, 'xxx');
+    const currentOffset = parseOffset(currentOffsetStr);
+    const isDST = applyDST && (currentOffset > standardOffset);
 
     data.push({
       date: `${year}-${month}-${day}`,
@@ -163,6 +189,9 @@ export function generateYearlyData(
       sunsetTime: blocks.length > 0 && blocks[blocks.length-1][1] < 24 ? blocks[blocks.length-1][1] : null,
       times1: blocks.length > 0 ? blocks[0] : null,
       times2: blocks.length > 1 ? blocks[1] : null,
+      blocks,
+      events: dayEvents,
+      isDST,
       daylightDuration,
       sunriseStr,
       sunsetStr,
