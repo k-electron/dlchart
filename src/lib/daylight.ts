@@ -18,12 +18,39 @@ function timeToDecimalHours(date: Date, timezone: string): number {
   return hours + minutes / 60 + seconds / 3600;
 }
 
-export function generateYearlyData(year: number, lat: number, lng: number, timezone: string): DaylightData[] {
+export function checkObservesDST(year: number, timezone: string): boolean {
+  const jan = new Date(Date.UTC(year, 0, 1));
+  const jul = new Date(Date.UTC(year, 6, 1));
+  const offsetJanStr = formatInTimeZone(jan, timezone, 'xxx');
+  const offsetJulStr = formatInTimeZone(jul, timezone, 'xxx');
+  return offsetJanStr !== offsetJulStr;
+}
+
+export function generateYearlyData(
+  year: number, 
+  lat: number, 
+  lng: number, 
+  timezone: string,
+  applyDST: boolean = true
+): DaylightData[] {
   const data: DaylightData[] = [];
   
   // Determine number of days in the year
   const isLeapYear = (year % 4 === 0 && year % 100 !== 0) || (year % 400 === 0);
   const daysInYear = isLeapYear ? 366 : 365;
+
+  const jan = new Date(Date.UTC(year, 0, 1));
+  const jul = new Date(Date.UTC(year, 6, 1));
+  const offsetJanStr = formatInTimeZone(jan, timezone, 'xxx');
+  const offsetJulStr = formatInTimeZone(jul, timezone, 'xxx');
+  
+  const parseOffset = (offsetStr: string) => {
+    const sign = offsetStr.startsWith('-') ? -1 : 1;
+    const [hours, minutes] = offsetStr.substring(1).split(':').map(Number);
+    return sign * (hours + minutes / 60);
+  };
+  
+  const standardOffset = Math.min(parseOffset(offsetJanStr), parseOffset(offsetJulStr));
 
   for (let i = 0; i < daysInYear; i++) {
     // Construct local date at noon
@@ -48,8 +75,6 @@ export function generateYearlyData(year: number, lat: number, lng: number, timez
 
     if (isNaN(times.sunrise.getTime()) || isNaN(times.sunset.getTime())) {
       // Handle polar day/night cases
-      // SunCalc returns Invalid Date if the sun doesn't rise or set
-      // Let's check sun altitude at noon
       const pos = SunCalc.getPosition(utcDate, lat, lng);
       if (pos.altitude > 0) {
         // Polar day (sun is up all day)
@@ -67,8 +92,36 @@ export function generateYearlyData(year: number, lat: number, lng: number, timez
         sunsetStr = 'Sun is down all day';
       }
     } else {
-      sunriseTime = timeToDecimalHours(times.sunrise, timezone);
-      sunsetTime = timeToDecimalHours(times.sunset, timezone);
+      if (applyDST) {
+        sunriseTime = timeToDecimalHours(times.sunrise, timezone);
+        sunsetTime = timeToDecimalHours(times.sunset, timezone);
+        sunriseStr = formatInTimeZone(times.sunrise, timezone, 'h:mm a');
+        sunsetStr = formatInTimeZone(times.sunset, timezone, 'h:mm a');
+      } else {
+        const getDecimalFromUTC = (date: Date) => {
+          let val = date.getUTCHours() + date.getUTCMinutes() / 60 + date.getUTCSeconds() / 3600 + standardOffset;
+          while (val < 0) val += 24;
+          while (val >= 24) val -= 24;
+          return val;
+        };
+        sunriseTime = getDecimalFromUTC(times.sunrise);
+        sunsetTime = getDecimalFromUTC(times.sunset);
+        
+        const formatDecimal = (decimal: number) => {
+          let h = Math.floor(decimal);
+          let m = Math.round((decimal - h) * 60);
+          if (m === 60) {
+            h += 1;
+            m = 0;
+          }
+          if (h >= 24) h -= 24;
+          const ampm = h >= 12 ? 'PM' : 'AM';
+          const displayH = h % 12 || 12;
+          return `${displayH}:${m.toString().padStart(2, '0')} ${ampm}`;
+        };
+        sunriseStr = formatDecimal(sunriseTime);
+        sunsetStr = formatDecimal(sunsetTime);
+      }
       
       // Handle cases where sunset is technically the next local day (e.g., very far north/south)
       if (sunsetTime < sunriseTime) {
@@ -76,8 +129,6 @@ export function generateYearlyData(year: number, lat: number, lng: number, timez
       }
       
       daylightDuration = sunsetTime - sunriseTime;
-      sunriseStr = formatInTimeZone(times.sunrise, timezone, 'h:mm a');
-      sunsetStr = formatInTimeZone(times.sunset, timezone, 'h:mm a');
     }
 
     data.push({

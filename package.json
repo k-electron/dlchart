@@ -24,12 +24,14 @@
     "react-dom": "^19.0.0",
     "recharts": "^3.8.1",
     "suncalc": "^1.9.0",
+    "tz-lookup": "^6.1.25",
     "vite": "^6.2.0"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
     "@types/suncalc": "^1.9.2",
+    "@types/tz-lookup": "^6.1.2",
     "autoprefixer": "^10.4.21",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",

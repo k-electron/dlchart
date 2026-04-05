@@ -1,7 +1,7 @@
 import { useState, useEffect, FormEvent } from 'react';
 import { Search, MapPin, ChevronLeft, ChevronRight, Loader2, Sun } from 'lucide-react';
 import { resolveLocation, LocationData } from './lib/location';
-import { generateYearlyData, DaylightData } from './lib/daylight';
+import { generateYearlyData, DaylightData, checkObservesDST } from './lib/daylight';
 import {
   AreaChart,
   Area,
@@ -9,11 +9,7 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  ResponsiveContainer,
-  ReferenceLine,
-  LineChart,
-  Line,
-  Legend
+  ResponsiveContainer
 } from 'recharts';
 
 export default function App() {
@@ -22,7 +18,11 @@ export default function App() {
   const [year, setYear] = useState(new Date().getFullYear());
   const [data, setData] = useState<DaylightData[]>([]);
   const [loading, setLoading] = useState(false);
+  const [isCalculating, setIsCalculating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  const [observesDST, setObservesDST] = useState(true);
+  const [applyDST, setApplyDST] = useState(true);
 
   const handleSearch = async (e?: FormEvent) => {
     if (e) e.preventDefault();
@@ -33,8 +33,7 @@ export default function App() {
     try {
       const loc = await resolveLocation(query);
       setLocation(loc);
-      const yearlyData = generateYearlyData(year, loc.lat, loc.lng, loc.timezone);
-      setData(yearlyData);
+      setApplyDST(true); // Reset toggle to default on new search
     } catch (err: any) {
       setError(err.message || 'Failed to resolve location. Please try again.');
     } finally {
@@ -50,15 +49,51 @@ export default function App() {
 
   useEffect(() => {
     if (location) {
-      const yearlyData = generateYearlyData(year, location.lat, location.lng, location.timezone);
+      setIsCalculating(true);
+      // Yield to browser to show loading state
+      const timer = setTimeout(() => {
+        const obsDST = checkObservesDST(year, location.timezone);
+        setObservesDST(obsDST);
+        
+        const yearlyData = generateYearlyData(
+          year, 
+          location.lat, 
+          location.lng, 
+          location.timezone, 
+          obsDST ? applyDST : true
+        );
+        setData(yearlyData);
+        setIsCalculating(false);
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [year, location]); // Removed applyDST from here
+
+  useEffect(() => {
+    // Only run this when applyDST changes, and not during the initial location/year load
+    if (location && !isCalculating) {
+      const obsDST = checkObservesDST(year, location.timezone);
+      const yearlyData = generateYearlyData(
+        year, 
+        location.lat, 
+        location.lng, 
+        location.timezone, 
+        obsDST ? applyDST : true
+      );
       setData(yearlyData);
     }
-  }, [year, location]);
+  }, [applyDST]);
 
   const formatHours = (decimalHours: number) => {
-    const hours = Math.floor(decimalHours);
-    const minutes = Math.round((decimalHours - hours) * 60);
-    const ampm = hours >= 12 ? 'PM' : 'AM';
+    if (decimalHours === 24 || decimalHours === 0) return '12:00 AM';
+    let hours = Math.floor(decimalHours);
+    let minutes = Math.round((decimalHours - hours) * 60);
+    if (minutes === 60) {
+      hours += 1;
+      minutes = 0;
+    }
+    if (hours === 24) return '12:00 AM';
+    const ampm = hours >= 12 && hours < 24 ? 'PM' : 'AM';
     const displayHours = hours % 12 || 12;
     return `${displayHours}:${minutes.toString().padStart(2, '0')} ${ampm}`;
   };
@@ -69,7 +104,7 @@ export default function App() {
     return `${hours}h ${minutes}m`;
   };
 
-  const CustomTooltip = ({ active, payload, label }: any) => {
+  const CustomTooltip = ({ active, payload }: any) => {
     if (active && payload && payload.length) {
       const dataPoint = payload[0].payload as DaylightData;
       return (
@@ -177,97 +212,138 @@ export default function App() {
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Sunrise / Sunset Chart */}
-              <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+              <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col">
                 <h3 className="text-lg font-semibold text-slate-800 mb-6">Sunrise & Sunset Times</h3>
-                <div className="h-[400px] w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart
-                      data={data}
-                      margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
-                    >
-                      <defs>
-                        <linearGradient id="colorDaylight" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#f97316" stopOpacity={0.3}/>
-                          <stop offset="95%" stopColor="#f97316" stopOpacity={0.05}/>
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                      <XAxis 
-                        dataKey="displayDate" 
-                        minTickGap={30}
-                        tick={{ fill: '#64748b', fontSize: 12 }}
-                        tickLine={false}
-                        axisLine={false}
-                      />
-                      <YAxis 
-                        domain={[0, 24]} 
-                        ticks={[0, 4, 8, 12, 16, 20, 24]}
-                        tickFormatter={(val) => formatHours(val)}
-                        tick={{ fill: '#64748b', fontSize: 12 }}
-                        tickLine={false}
-                        axisLine={false}
-                      />
-                      <Tooltip content={<CustomTooltip />} />
-                      <Area 
-                        type="linear" 
-                        dataKey="times" 
-                        stroke="#f97316" 
-                        fill="url(#colorDaylight)" 
-                        strokeWidth={2}
-                        name="Daylight"
-                      />
-                    </AreaChart>
-                  </ResponsiveContainer>
+                <div className="relative flex-1 min-h-[400px]">
+                  {(loading || isCalculating) && (
+                    <div className="absolute inset-0 z-10 bg-white/60 backdrop-blur-sm flex items-center justify-center rounded-xl">
+                      <Loader2 className="h-8 w-8 text-orange-500 animate-spin" />
+                    </div>
+                  )}
+                  <div className="absolute inset-0">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart
+                        data={data}
+                        margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+                      >
+                        <defs>
+                          <linearGradient id="colorDaylight" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#f97316" stopOpacity={0.3}/>
+                            <stop offset="95%" stopColor="#f97316" stopOpacity={0.05}/>
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                        <XAxis 
+                          dataKey="displayDate" 
+                          minTickGap={30}
+                          tick={{ fill: '#64748b', fontSize: 12 }}
+                          tickLine={false}
+                          axisLine={false}
+                        />
+                        <YAxis 
+                          domain={[0, 24]} 
+                          ticks={[0, 4, 8, 12, 16, 20, 24]}
+                          tickFormatter={(val) => formatHours(val)}
+                          tick={{ fill: '#64748b', fontSize: 12 }}
+                          tickLine={false}
+                          axisLine={false}
+                          reversed={true}
+                        />
+                        <Tooltip content={<CustomTooltip />} />
+                        <Area 
+                          type="linear" 
+                          dataKey="times" 
+                          stroke="#f97316" 
+                          fill="url(#colorDaylight)" 
+                          strokeWidth={2}
+                          name="Daylight"
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
                 </div>
+                
+                <div className="mt-6 flex items-center justify-between bg-slate-50 p-4 rounded-xl border border-slate-200">
+                  <div>
+                    <h4 className="text-sm font-semibold text-slate-800">Daylight Saving Time</h4>
+                    <p className="text-xs text-slate-500">
+                      {observesDST 
+                        ? "Toggle to see times without DST adjustments." 
+                        : "This region does not observe DST."}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setApplyDST(!applyDST)}
+                    disabled={!observesDST}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 ${
+                      !observesDST ? 'bg-slate-300 cursor-not-allowed' : applyDST ? 'bg-orange-500' : 'bg-slate-300'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                        applyDST && observesDST ? 'translate-x-6' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
+                </div>
+                
                 <p className="text-sm text-slate-500 mt-4 text-center">
-                  Notice the jumps? Those are Daylight Saving Time transitions.
+                  Discontinuities indicate Daylight Saving Time transitions.
                 </p>
               </div>
 
               {/* Daylight Duration Chart */}
-              <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+              <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col">
                 <h3 className="text-lg font-semibold text-slate-800 mb-6">Total Daylight Hours</h3>
-                <div className="h-[400px] w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart
-                      data={data}
-                      margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
-                    >
-                      <defs>
-                        <linearGradient id="colorDuration" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#eab308" stopOpacity={0.3}/>
-                          <stop offset="95%" stopColor="#eab308" stopOpacity={0.05}/>
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                      <XAxis 
-                        dataKey="displayDate" 
-                        minTickGap={30}
-                        tick={{ fill: '#64748b', fontSize: 12 }}
-                        tickLine={false}
-                        axisLine={false}
-                      />
-                      <YAxis 
-                        domain={['auto', 'auto']}
-                        tickFormatter={(val) => `${Math.round(val)}h`}
-                        tick={{ fill: '#64748b', fontSize: 12 }}
-                        tickLine={false}
-                        axisLine={false}
-                      />
-                      <Tooltip content={<CustomTooltip />} />
-                      <Area 
-                        type="monotone" 
-                        dataKey="daylightDuration" 
-                        stroke="#eab308" 
-                        fill="url(#colorDuration)" 
-                        strokeWidth={2}
-                        name="Duration"
-                      />
-                    </AreaChart>
-                  </ResponsiveContainer>
+                <div className="relative flex-1 min-h-[400px]">
+                  {(loading || isCalculating) && (
+                    <div className="absolute inset-0 z-10 bg-white/60 backdrop-blur-sm flex items-center justify-center rounded-xl">
+                      <Loader2 className="h-8 w-8 text-orange-500 animate-spin" />
+                    </div>
+                  )}
+                  <div className="absolute inset-0">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart
+                        data={data}
+                        margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+                      >
+                        <defs>
+                          <linearGradient id="colorDuration" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#eab308" stopOpacity={0.3}/>
+                            <stop offset="95%" stopColor="#eab308" stopOpacity={0.05}/>
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                        <XAxis 
+                          dataKey="displayDate" 
+                          minTickGap={30}
+                          tick={{ fill: '#64748b', fontSize: 12 }}
+                          tickLine={false}
+                          axisLine={false}
+                        />
+                        <YAxis 
+                          domain={[0, 24]}
+                          ticks={[0, 4, 8, 12, 16, 20, 24]}
+                          tickFormatter={(val) => `${Math.round(val)}h`}
+                          tick={{ fill: '#64748b', fontSize: 12 }}
+                          tickLine={false}
+                          axisLine={false}
+                        />
+                        <Tooltip content={<CustomTooltip />} />
+                        <Area 
+                          type="monotone" 
+                          dataKey="daylightDuration" 
+                          stroke="#eab308" 
+                          fill="url(#colorDuration)" 
+                          strokeWidth={2}
+                          name="Duration"
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
                 </div>
                 <p className="text-sm text-slate-500 mt-4 text-center">
-                  The smooth curve shows how daylight duration changes independently of the clock.
+                  Total daylight hours throughout the year.
                 </p>
               </div>
             </div>
