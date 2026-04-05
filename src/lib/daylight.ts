@@ -12,14 +12,20 @@ export interface DaylightData {
   displayDate: string; // MMM DD
   sunriseTime: number | null; // Decimal hours (e.g., 6.5 for 6:30 AM), null for polar night
   sunsetTime: number | null; // Decimal hours, null for polar night
-  times1: [number, number] | null; // Primary daylight block
-  times2: [number, number] | null; // Secondary daylight block (for days where daylight crosses midnight)
   blocks: [number, number][]; // All daylight blocks for the day
   events: DaylightEvent[]; // Chronological list of sunrise/sunset events
   isDST: boolean; // Whether daylight saving time is active on this day
   daylightDuration: number; // Decimal hours
   sunriseStr: string;
   sunsetStr: string;
+  // Stacked bar segments (durations in hours)
+  night1: number;
+  day1: number;
+  night2: number;
+  day2: number;
+  night3: number;
+  day3: number;
+  night4: number;
 }
 
 function timeToDecimalHours(date: Date, timezone: string): number {
@@ -182,19 +188,60 @@ export function generateYearlyData(
     const currentOffset = parseOffset(currentOffsetStr);
     const isDST = applyDST && (currentOffset > standardOffset);
 
+    // Calculate stacked bar segments
+    let night1 = 0, day1 = 0, night2 = 0, day2 = 0, night3 = 0, day3 = 0, night4 = 0;
+    let currentTime = 0;
+
+    if (blocks.length > 0) {
+      night1 = blocks[0][0] - currentTime;
+      currentTime = blocks[0][0];
+      day1 = blocks[0][1] - currentTime;
+      currentTime = blocks[0][1];
+    } else {
+      night1 = 24;
+      currentTime = 24;
+    }
+
+    if (blocks.length > 1) {
+      night2 = blocks[1][0] - currentTime;
+      currentTime = blocks[1][0];
+      day2 = blocks[1][1] - currentTime;
+      currentTime = blocks[1][1];
+    } else {
+      night2 = 24 - currentTime;
+      currentTime = 24;
+    }
+
+    if (blocks.length > 2) {
+      night3 = blocks[2][0] - currentTime;
+      currentTime = blocks[2][0];
+      day3 = blocks[2][1] - currentTime;
+      currentTime = blocks[2][1];
+    } else {
+      night3 = 24 - currentTime;
+      currentTime = 24;
+    }
+
+    night4 = 24 - currentTime;
+
     data.push({
       date: `${year}-${month}-${day}`,
       displayDate: formatInTimeZone(noonUtc, 'UTC', 'MMM d'),
       sunriseTime: blocks.length > 0 && blocks[0][0] > 0 ? blocks[0][0] : null,
       sunsetTime: blocks.length > 0 && blocks[blocks.length-1][1] < 24 ? blocks[blocks.length-1][1] : null,
-      times1: blocks.length > 0 ? blocks[0] : null,
-      times2: blocks.length > 1 ? blocks[1] : null,
       blocks,
       events: dayEvents,
       isDST,
       daylightDuration,
       sunriseStr,
       sunsetStr,
+      night1,
+      day1,
+      night2,
+      day2,
+      night3,
+      day3,
+      night4,
     });
   }
 

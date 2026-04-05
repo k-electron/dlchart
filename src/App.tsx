@@ -262,16 +262,10 @@ export default function App() {
                         <ReferenceArea {...({ y1: 0, y2: 24, fill: '#334155' } as any)} />
                         <XAxis 
                           dataKey="displayDate" 
-                          xAxisId={0}
                           minTickGap={30}
                           tick={{ fill: '#64748b', fontSize: 12 }}
                           tickLine={false}
                           axisLine={false}
-                        />
-                        <XAxis 
-                          dataKey="displayDate" 
-                          xAxisId={1}
-                          hide={true}
                         />
                         <YAxis 
                           domain={[0, 24]} 
@@ -283,20 +277,13 @@ export default function App() {
                           reversed={true}
                           allowDataOverflow={true}
                         />
-                        <Bar 
-                          dataKey="times1" 
-                          xAxisId={0}
-                          fill="#fef08a" 
-                          name="Daylight"
-                          isAnimationActive={false}
-                        />
-                        <Bar 
-                          dataKey="times2" 
-                          xAxisId={1}
-                          fill="#fef08a" 
-                          name="Daylight (Night)"
-                          isAnimationActive={false}
-                        />
+                        <Bar dataKey="night1" stackId="a" fill="transparent" isAnimationActive={false} />
+                        <Bar dataKey="day1" stackId="a" fill="#fef08a" isAnimationActive={false} />
+                        <Bar dataKey="night2" stackId="a" fill="transparent" isAnimationActive={false} />
+                        <Bar dataKey="day2" stackId="a" fill="#fef08a" isAnimationActive={false} />
+                        <Bar dataKey="night3" stackId="a" fill="transparent" isAnimationActive={false} />
+                        <Bar dataKey="day3" stackId="a" fill="#fef08a" isAnimationActive={false} />
+                        <Bar dataKey="night4" stackId="a" fill="transparent" isAnimationActive={false} />
                         <CartesianGrid 
                           strokeDasharray="3 3" 
                           vertical={false} 
