@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { generateYearlyData, checkObservesDST } from './daylight';
+import { generateYearlyData, checkObservesDST } from '../src/lib/daylight';
 
 describe('daylight', () => {
   describe('checkObservesDST', () => {
